@@ -1,5 +1,10 @@
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
+import { getInvestorTypeLabel, getInvestorTypeColor, GRAPH_CONFIG } from '@/lib/constants/mappings';
+
+export { getInvestorTypeLabel, getInvestorTypeColor };
+
+export const DEFAULT_DEGREES = GRAPH_CONFIG.DEFAULT_DEGREES;
 
 export interface InvestorTypeDistribution {
   type: string;
@@ -49,19 +54,6 @@ export interface MarketPulseStats {
   top_holders: TopHolder[];
   invalid_rows: InvalidRow[];
 }
-
-export const INVESTOR_TYPE_MAPPING: Record<string, { label: string; color: string }> = {
-  ID: { label: 'Individual', color: '#22c55e' },
-  IB: { label: 'Investment Bank', color: '#8b5cf6' },
-  IS: { label: 'Insurance', color: '#f59e0b' },
-  CP: { label: 'Corporate', color: '#3b82f6' },
-  FD: { label: 'Foreign Individual', color: '#ec4899' },
-  FC: { label: 'Foreign Corporate', color: '#06b6d4' },
-  PF: { label: 'Pension Fund', color: '#84cc16' },
-  SA: { label: 'Securities Account', color: '#f97316' },
-  RS: { label: 'Restricted', color: '#ef4444' },
-  UK: { label: 'Unknown', color: '#64748b' },
-};
 
 const MARKET_PULSE_KEY = ['market-pulse-stats'];
 
@@ -363,7 +355,7 @@ export interface NetworkLink {
   percentage: number;
 }
 
-export async function fetchInvestorNetwork(investorName: string, degrees: 1 | 2 = 2): Promise<{ nodes: NetworkNode[]; links: NetworkLink[] }> {
+export async function fetchInvestorNetwork(investorName: string, degrees: 1 | 2 | 3 = 3): Promise<{ nodes: NetworkNode[]; links: NetworkLink[] }> {
   const supabase = createClient();
   
   const nodes: NetworkNode[] = [];
@@ -426,7 +418,7 @@ export async function fetchInvestorNetwork(investorName: string, degrees: 1 | 2 
       secondDegreeData?.forEach((row) => {
         const investorId = `investor-${row.investor_name}`;
         
-        if (!nodeIds.has(investorId) && !seenSecondDegree.has(investorId) && nodes.length < 100) {
+        if (!nodeIds.has(investorId) && !seenSecondDegree.has(investorId) && nodes.length < 150) {
           nodes.push({
             id: investorId,
             name: row.investor_name,
@@ -445,13 +437,56 @@ export async function fetchInvestorNetwork(investorName: string, degrees: 1 | 2 
           });
         }
       });
+
+      if (degrees >= 3) {
+        const secondDegreeInvestorNames = Array.from(seenSecondDegree).map(id => id.replace('investor-', ''));
+        
+        if (secondDegreeInvestorNames.length > 0) {
+          const { data: thirdDegreeData, error: thirdError } = await supabase
+            .from('shareholders')
+            .select('share_code, issuer_name, investor_name, percentage')
+            .in('investor_name', secondDegreeInvestorNames)
+            .not('share_code', 'in', companyCodes)
+            .order('percentage', { ascending: false })
+            .limit(100);
+
+          if (!thirdError && thirdDegreeData) {
+            const seenThirdDegree = new Set<string>();
+            
+            thirdDegreeData?.forEach((row) => {
+              const companyId3 = `company-${row.share_code}`;
+              
+              if (!nodeIds.has(companyId3) && nodes.length < 200) {
+                nodes.push({
+                  id: companyId3,
+                  name: row.issuer_name || row.share_code,
+                  type: 'company',
+                  val: 5,
+                });
+                nodeIds.add(companyId3);
+              }
+
+              if (nodeIds.has(companyId3)) {
+                const secondInvestorId = `investor-${row.investor_name}`;
+                if (nodeIds.has(secondInvestorId)) {
+                  links.push({
+                    source: secondInvestorId,
+                    target: companyId3,
+                    percentage: row.percentage || 0,
+                  });
+                }
+              }
+            });
+          }
+        }
+      }
     }
   }
 
   return { nodes, links };
 }
 
-export function useInvestorNetwork(investorName: string, degrees: 1 | 2 = 2) {
+export function useInvestorNetwork(investorName: string, degrees: 1 | 2 | 3 = 3) {
   return useQuery({
     queryKey: ['network', investorName, degrees],
     queryFn: () => fetchInvestorNetwork(investorName, degrees),

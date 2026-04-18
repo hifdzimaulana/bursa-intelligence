@@ -16,7 +16,9 @@ import {
   ArcElement,
 } from 'chart.js';
 import { Doughnut } from 'react-chartjs-2';
-import { useMarketPulseStats, INVESTOR_TYPE_MAPPING } from '@/lib/queries/market-pulse';
+import { useMarketPulseStats } from '@/lib/queries/market-pulse';
+import { getInvestorTypeColor, getInvestorTypeLabel } from '@/lib/constants/mappings';
+import InvestorTypeBadge from '@/components/investor-type-badge';
 
 ChartJS.register(
   CategoryScale,
@@ -53,14 +55,6 @@ function formatNumber(num: number): string {
   if (num >= 1e9) return (num / 1e9).toFixed(2) + 'B';
   if (num >= 1e6) return (num / 1e6).toFixed(2) + 'M';
   return num.toLocaleString('id-ID');
-}
-
-function getInvestorTypeColor(type: string): string {
-  return INVESTOR_TYPE_MAPPING[type]?.color || BLOOMBERG_COLORS.slate[400];
-}
-
-function getInvestorTypeLabel(type: string): string {
-  return INVESTOR_TYPE_MAPPING[type]?.label || type || 'Unknown';
 }
 
 export default function DashboardPage() {

@@ -4,29 +4,9 @@ import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Search, Loader2, ChevronDown, Building2, Users, X } from 'lucide-react';
-import { useInfiniteInvestors, useInfiniteEntities, INVESTOR_TYPE_MAPPING } from '@/lib/queries/market-pulse';
-
-const INVESTOR_TYPE_OPTIONS = [
-  { value: 'all', label: 'All Types' },
-  { value: 'ID', label: 'Individual' },
-  { value: 'IB', label: 'Investment Bank' },
-  { value: 'IS', label: 'Insurance' },
-  { value: 'CP', label: 'Corporate' },
-  { value: 'FD', label: 'Foreign Individual' },
-  { value: 'FC', label: 'Foreign Corporate' },
-  { value: 'PF', label: 'Pension Fund' },
-  { value: 'SA', label: 'Securities Account' },
-];
-
-function getInvestorTypeLabel(type: string | null): string {
-  if (!type) return 'Unknown';
-  return INVESTOR_TYPE_MAPPING[type]?.label || type;
-}
-
-function getInvestorTypeColor(type: string | null): string {
-  if (!type) return '#64748b';
-  return INVESTOR_TYPE_MAPPING[type]?.color || '#64748b';
-}
+import { useInfiniteInvestors, useInfiniteEntities } from '@/lib/queries/market-pulse';
+import { INVESTOR_TYPE_OPTIONS, getInvestorTypeLabel, getInvestorTypeColor } from '@/lib/constants/mappings';
+import InvestorTypeBadge from '@/components/investor-type-badge';
 
 function TableContent() {
   const searchParams = useSearchParams();
@@ -97,7 +77,7 @@ function TableContent() {
   }) => (
     <Link
       key={investor.investor_name}
-      href={`/visualize/investor/${encodeURIComponent(investor.investor_name)}?name=${encodeURIComponent(investor.investor_name)}`}
+      href={`/table/investor/${encodeURIComponent(investor.investor_name)}`}
       className="block bg-[#020617] border border-slate-800 p-4 hover:border-slate-600 transition-all group"
     >
       <div className="flex items-start justify-between">
@@ -110,15 +90,7 @@ function TableContent() {
               <h3 className="text-slate-200 font-medium truncate group-hover:text-terminal-amber transition-colors">
                 {investor.investor_name}
               </h3>
-              <span 
-                className="text-xs px-2 py-0.5 rounded"
-                style={{ 
-                  backgroundColor: getInvestorTypeColor(investor.investor_type) + '20',
-                  color: getInvestorTypeColor(investor.investor_type)
-                }}
-              >
-                {getInvestorTypeLabel(investor.investor_type)}
-              </span>
+              <InvestorTypeBadge code={investor.investor_type} size="sm" />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2 text-xs text-slate-400 mt-2">
@@ -153,7 +125,7 @@ function TableContent() {
   }) => (
     <Link
       key={entity.share_code}
-      href={`/visualize/company/${entity.share_code}`}
+      href={`/table/entity/${encodeURIComponent(entity.share_code)}`}
       className="block bg-[#020617] border border-slate-800 p-4 hover:border-slate-600 transition-all group"
     >
       <div className="flex items-start justify-between">

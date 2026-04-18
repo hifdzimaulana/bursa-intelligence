@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import ForceGraph2D, { ForceGraphMethods, NodeObject, LinkObject } from 'react-force-graph-2d';
 import { Loader2, ZoomIn, ZoomOut, Maximize2, Focus, Eye, EyeOff, X, ChevronRight } from 'lucide-react';
+import { GRAPH_CONFIG, NODE_COLORS, LINK_COLORS } from '@/lib/constants/mappings';
 
 interface GraphNode {
   id: string;
@@ -32,20 +33,6 @@ interface NetworkGraphProps {
   seedType?: 'investor' | 'company';
 }
 
-const NODE_COLORS = {
-  investor: '#ffb020',
-  company: '#4da6ff',
-  root: '#22c55e',
-  dimmed: '#1e293b',
-};
-
-const LINK_COLORS = {
-  direct: 'rgba(77, 166, 255, 0.8)',
-  degree2: 'rgba(255, 176, 32, 0.5)',
-  degree3: 'rgba(148, 163, 184, 0.3)',
-  dimmed: 'rgba(30, 41, 59, 0.2)',
-};
-
 export default function NetworkGraph({
   investorName,
   companyCode,
@@ -61,7 +48,7 @@ export default function NetworkGraph({
   const [data, setData] = useState<{ nodes: GraphNode[]; links: GraphLink[] }>({ nodes: [], links: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [nodeLimit] = useState(600);
+  const [nodeLimit] = useState(GRAPH_CONFIG.NODE_LIMIT);
   const [focusMode, setFocusMode] = useState(false);
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   
@@ -241,6 +228,40 @@ export default function NetworkGraph({
     return Math.max(0.5, (link.percentage || 0) / 12);
   }, [focusMode, selectedNode, data.nodes]);
 
+  const linkCanvasObject = useCallback((link: GraphLink, ctx: CanvasRenderingContext2D, globalScale: number) => {
+    if (!link.source || !link.target) return;
+    
+    const sourceNode = typeof link.source === 'object' ? link.source : data.nodes.find(n => n.id === link.source);
+    const targetNode = typeof link.target === 'object' ? link.target : data.nodes.find(n => n.id === link.target);
+    
+    if (!sourceNode || !targetNode || sourceNode.x === undefined || targetNode.x === undefined) return;
+    
+    const sourceX = sourceNode.x || 0;
+    const sourceY = sourceNode.y || 0;
+    const targetX = targetNode.x || 0;
+    const targetY = targetNode.y || 0;
+    
+    const midX = (sourceX + targetX) / 2;
+    const midY = (sourceY + targetY) / 2;
+    
+    if (link.percentage && link.percentage > 0.5) {
+      const fontSize = Math.max(10 / globalScale, 3);
+      const percentText = `${link.percentage.toFixed(1)}%`;
+      
+      ctx.font = `600 ${fontSize}px "JetBrains Mono", monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      
+      ctx.fillStyle = '#020617';
+      const padding = 2;
+      const textWidth = ctx.measureText(percentText).width;
+      ctx.fillRect(midX - textWidth / 2 - padding, midY - fontSize / 2 - padding, textWidth + padding * 2, fontSize + padding * 2);
+      
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText(percentText, midX, midY);
+    }
+  }, [data.nodes]);
+
   const handleClose = useCallback(() => {
     if (onClose) {
       onClose();
@@ -367,12 +388,13 @@ export default function NetworkGraph({
         nodeRelSize={1}
         linkColor={getLinkColor}
         linkWidth={getLinkWidth}
+        linkCanvasObject={linkCanvasObject}
         linkDirectionalArrowLength={3.5}
         linkDirectionalArrowRelPos={0.9}
-        cooldownTicks={50}
+        cooldownTicks={GRAPH_CONFIG.COOLDOWN_TICKS}
         onEngineStop={() => graphRef.current?.zoomToFit(400, 50)}
-        d3VelocityDecay={0.15}
-        d3AlphaDecay={0.02}
+        d3VelocityDecay={GRAPH_CONFIG.VELOCITY_DECAY}
+        d3AlphaDecay={GRAPH_CONFIG.ALPHA_DECAY}
         onNodeClick={handleNodeClick}
       />
     </div>
