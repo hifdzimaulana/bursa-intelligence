@@ -63,8 +63,9 @@ BEGIN
       'concentration', concentration,
       'total_shares', total_shares,
       'holder_count', holder_count
-    ) ORDER BY concentration DESC LIMIT 10
-  ), '[]'::jsonb)
+    )
+    ORDER BY concentration DESC
+  ) FILTER (WHERE rn <= 10), '[]'::jsonb)
   INTO top_concentrated
   FROM (
     SELECT 
@@ -72,7 +73,8 @@ BEGIN
       MAX(issuer_name) AS issuer_name,
       SUM(COALESCE(percentage, 0)) AS concentration,
       SUM(COALESCE(total_holding_shares, 0)) AS total_shares,
-      COUNT(*) AS holder_count
+      COUNT(*) AS holder_count,
+      ROW_NUMBER() OVER (ORDER BY SUM(COALESCE(percentage, 0)) DESC) AS rn
     FROM shareholders
     WHERE COALESCE(percentage, 0) > 1
     GROUP BY share_code
@@ -102,20 +104,22 @@ BEGIN
       'issuer_name', issuer_name,
       'percentage', percentage,
       'total_holding_shares', total_holding_shares
-    ) ORDER BY percentage DESC LIMIT 10
-  ), '[]'::jsonb)
+    )
+    ORDER BY percentage DESC
+  ) FILTER (WHERE rn <= 10), '[]'::jsonb)
   INTO top_holders
   FROM (
-    SELECT DISTINCT ON (investor_name, share_code)
+    SELECT 
       investor_name,
       share_code,
-      issuer_name,
-      percentage,
-      total_holding_shares
+      MAX(issuer_name) AS issuer_name,
+      MAX(percentage) AS percentage,
+      MAX(total_holding_shares) AS total_holding_shares,
+      ROW_NUMBER() OVER (ORDER BY MAX(percentage) DESC) AS rn
     FROM shareholders
     WHERE percentage IS NOT NULL
-    ORDER BY investor_name, share_code, percentage DESC
-  ) AS holders;
+    GROUP BY investor_name, share_code
+  ) AS ranked_holders;
 
   -- Invalid rows (latest 10)
   SELECT COALESCE(jsonb_agg(
@@ -127,15 +131,16 @@ BEGIN
       'investor_type', investor_type,
       'percentage', percentage,
       'validation_status', validation_status
-    ) ORDER BY date DESC LIMIT 10
-  ), '[]'::jsonb)
+    )
+    ORDER BY date DESC
+  ) FILTER (WHERE rn <= 10), '[]'::jsonb)
   INTO invalid_rows_data
   FROM (
-    SELECT id, date, share_code, investor_name, investor_type, percentage, validation_status
+    SELECT 
+      id, date, share_code, investor_name, investor_type, percentage, validation_status,
+      ROW_NUMBER() OVER (ORDER BY date DESC) AS rn
     FROM shareholders
     WHERE validation_status = 'INVALID'
-    ORDER BY date DESC
-    LIMIT 10
   ) AS invalid_recs;
 
   -- Build final result
