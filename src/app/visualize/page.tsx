@@ -48,7 +48,6 @@ function VisualizeContent() {
   
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
-  const graphRef = useRef<any>(null);
   const [graphZoom, setGraphZoom] = useState(1);
 
   const { data: searchData, isLoading: isSearching } = useSearchEntities(searchInput, searchType);
@@ -118,6 +117,8 @@ function VisualizeContent() {
     router.push('/visualize', { scroll: false });
   };
 
+  const graphRef = useRef<any>(null);
+
   const graphData = useMemo(() => {
     if (!networkData || !networkData.nodes || networkData.nodes.length === 0) return null;
     return {
@@ -131,6 +132,30 @@ function VisualizeContent() {
       })),
     };
   }, [networkData]);
+
+  // Apply stronger forces after graph initializes
+  useEffect(() => {
+    if (graphData && graphRef.current) {
+      const fg = graphRef.current;
+      setTimeout(() => {
+        const charge = fg.d3Force('charge');
+        if (charge && typeof charge.strength === 'function') {
+          charge.strength(-500);
+        }
+        const link = fg.d3Force('link');
+        if (link && typeof link.distance === 'function') {
+          link.distance(150);
+        }
+        const collide = fg.d3Force('collide');
+        if (collide && typeof collide.radius === 'function') {
+          collide.radius(30);
+        }
+        if (typeof fg.alpha === 'function') {
+          fg.alpha(1);
+        }
+      }, 500);
+    }
+  }, [graphData]);
 
   const nodeCanvasObject = useMemo(() => {
     return (node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -326,18 +351,9 @@ function VisualizeContent() {
               linkDirectionalArrowLength={4}
               linkDirectionalArrowRelPos={0.9}
               backgroundColor="#020617"
-              cooldownTicks={150}
-              d3AlphaDecay={0.01}
-              d3VelocityDecay={0.1}
-              onEngineStop={() => {
-                // Increase repulsion after initial layout settles
-                if (graphRef.current) {
-                  graphRef.current.d3Force('charge')?.strength(-800);
-                  graphRef.current.d3Force('link')?.distance(200);
-                  graphRef.current.d3Force('collide')?.radius(30);
-                  graphRef.current.reheatSimulation();
-                }
-              }}
+              cooldownTicks={250}
+              d3AlphaDecay={0.005}
+              d3VelocityDecay={0.05}
               nodeCanvasObject={nodeCanvasObject}
               linkCanvasObject={linkCanvasObject}
             />
