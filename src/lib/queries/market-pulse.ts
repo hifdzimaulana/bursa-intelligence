@@ -584,40 +584,54 @@ export async function fetchInvestorNetwork(
       const ownerNames = Array.from(seenOwners).map(id => id.replace('investor-', ''));
       
       if (ownerNames.length > 0) {
-        // 3rd degree: Other entities those investors own
-        const { data: thirdDegreeData, error: thirdError } = await supabase
+        // 3rd degree: Other investors who own the 2nd-degree investors (if they're also companies)
+        // First find which 2nd-degree investors are ALSO listed companies
+        const { data: investorCompaniesData, error: invCompError } = await supabase
           .from('shareholders')
-          .select('share_code, issuer_name, investor_name, percentage')
+          .select('investor_name')
           .in('investor_name', ownerNames)
-          .not('share_code', 'eq', name.toUpperCase())
-          .order('percentage', { ascending: false })
-          .limit(100);
+          .not('share_code', 'is', null)
+          .limit(ownerNames.length);
 
-        if (!thirdError && thirdDegreeData) {
-          thirdDegreeData?.forEach((row) => {
-            const companyId3 = `entity-${row.share_code}`;
-            
-            if (!nodeIds.has(companyId3) && nodes.length < 200) {
-              nodes.push({
-                id: companyId3,
-                name: row.issuer_name || row.share_code,
-                type: 'company',
-                val: 10,
-              });
-              nodeIds.add(companyId3);
-            }
+        const investorCompanyNames = new Set<string>();
+        investorCompaniesData?.forEach((row) => {
+          if (row.investor_name) {
+            investorCompanyNames.add(row.investor_name);
+          }
+        });
 
-            if (nodeIds.has(companyId3)) {
-              const investorId3 = `investor-${row.investor_name}`;
-              if (nodeIds.has(investorId3)) {
+        // Now for each investor that's also a company, find OTHER investors who own them
+        for (const invName of investorCompanyNames) {
+          const { data: thirdDegreeOwners, error: thirdError } = await supabase
+            .from('shareholders')
+            .select('investor_name, percentage')
+            .eq('share_code', invName.toUpperCase())
+            .order('percentage', { ascending: false })
+            .limit(30);
+
+          if (!thirdError && thirdDegreeOwners) {
+            thirdDegreeOwners?.forEach((row) => {
+              const thirdInvestorId = `investor-${row.investor_name}`;
+              
+              if (!nodeIds.has(thirdInvestorId) && nodes.length < 250) {
+                nodes.push({
+                  id: thirdInvestorId,
+                  name: row.investor_name,
+                  type: 'investor',
+                  val: 10,
+                });
+                nodeIds.add(thirdInvestorId);
+              }
+
+              if (nodeIds.has(thirdInvestorId)) {
                 links.push({
-                  source: investorId3,
-                  target: companyId3,
+                  source: thirdInvestorId,
+                  target: `entity-${invName}`,
                   percentage: row.percentage || 0,
                 });
               }
-            }
-          });
+            });
+          }
         }
       }
     }
