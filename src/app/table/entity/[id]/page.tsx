@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useParams, useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 import Link from 'next/link';
-import { Loader2, ArrowRight, Network, PieChart, Users } from 'lucide-react';
+import { Loader2, ArrowRight, Network, PieChart, Users, Globe, Building2, Percent } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import InvestorTypeBadge from '@/components/investor-type-badge';
 import { getInvestorTypeLabel, getInvestorTypeColor } from '@/lib/constants/mappings';
@@ -12,34 +12,94 @@ import { getInvestorTypeLabel, getInvestorTypeColor } from '@/lib/constants/mapp
 interface Owner {
   investor_name: string;
   investor_type: string | null;
+  local_foreign: string | null;
   total_holding_shares: number;
   percentage: number;
 }
 
-async function fetchEntityOwners(shareCode: string): Promise<{ owners: Owner[]; issuer_name: string; total_holders: number }> {
+interface EntityProfile {
+  issuer_name: string;
+  holdings_scrip: number;
+  holdings_scripless: number;
+  total_holders: number;
+  majority_type: string | null;
+  local_ownership_percent: number;
+  foreign_ownership_percent: number;
+}
+
+async function fetchEntityOwners(shareCode: string): Promise<{ owners: Owner[]; profile: EntityProfile }> {
   const supabase = createClient();
   
   const { data, error } = await supabase
     .from('shareholders')
-    .select('investor_name, investor_type, total_holding_shares, percentage, issuer_name')
+    .select('investor_name, investor_type, local_foreign, total_holding_shares, percentage, issuer_name, holdings_scrip, holdings_scripless')
     .eq('share_code', shareCode.toUpperCase())
     .order('percentage', { ascending: false });
 
   if (error) throw new Error(error.message);
 
-  const owners: Owner[] = data.map(row => ({
-    investor_name: row.investor_name,
-    investor_type: row.investor_type,
-    total_holding_shares: row.total_holding_shares,
-    percentage: row.percentage,
-  }));
+  const owners: Owner[] = [];
+  const investorTypes: Record<string, number> = {};
+  let holdingsScrip = 0;
+  let holdingsScripless = 0;
+  let localOwnership = 0;
+  let foreignOwnership = 0;
+  let issuerName = shareCode;
+  const uniqueInvestors = new Set<string>();
 
-  const issuerName = data[0]?.issuer_name || shareCode;
+  data?.forEach(row => {
+    if (!uniqueInvestors.has(row.investor_name)) {
+      uniqueInvestors.add(row.investor_name);
+      owners.push({
+        investor_name: row.investor_name,
+        investor_type: row.investor_type,
+        local_foreign: row.local_foreign,
+        total_holding_shares: row.total_holding_shares,
+        percentage: row.percentage,
+      });
+      
+      if (row.investor_type) {
+        investorTypes[row.investor_type] = (investorTypes[row.investor_type] || 0) + 1;
+      }
+      
+      if (row.local_foreign === 'F') {
+        foreignOwnership += row.percentage || 0;
+      } else if (row.local_foreign === 'L') {
+        localOwnership += row.percentage || 0;
+      }
+    }
+    
+    holdingsScrip += row.holdings_scrip || 0;
+    holdingsScripless += row.holdings_scripless || 0;
+    if (row.issuer_name) issuerName = row.issuer_name;
+  });
+
+  let majorityType: string | null = null;
+  let maxCount = 0;
+  for (const [type, count] of Object.entries(investorTypes)) {
+    if (count > maxCount) {
+      maxCount = count;
+      majorityType = type;
+    }
+  }
+
+  const totalOwnership = localOwnership + foreignOwnership;
+  const localPercent = totalOwnership > 0 ? (localOwnership / totalOwnership) * 100 : 0;
+  const foreignPercent = totalOwnership > 0 ? (foreignOwnership / totalOwnership) * 100 : 0;
+
+  const profile: EntityProfile = {
+    issuer_name: issuerName,
+    holdings_scrip: holdingsScrip,
+    holdings_scripless: holdingsScripless,
+    total_holders: uniqueInvestors.size,
+    majority_type: majorityType,
+    local_ownership_percent: localPercent,
+    foreign_ownership_percent: foreignPercent,
+  };
 
   return {
     owners,
-    issuer_name: issuerName,
-    total_holders: owners.length,
+    profile,
   };
 }
 
@@ -71,11 +131,17 @@ function EntityDetailContent() {
     );
   }
 
-  const { owners, issuer_name, total_holders } = data;
+  const { owners, profile } = data;
 
   const trackedOwnership = owners.reduce((sum, o) => sum + o.percentage, 0);
   const totalShares = owners.reduce((sum, o) => sum + o.total_holding_shares, 0);
   const avgOwnership = owners.length > 0 ? trackedOwnership / owners.length : 0;
+  const publicOwnership = Math.max(0, 100 - trackedOwnership);
+  const totalScrip = profile.holdings_scrip;
+  const totalScripless = profile.holdings_scripless;
+  const scripTotal = totalScrip + totalScripless;
+  const scripPercent = scripTotal > 0 ? (totalScrip / scripTotal) * 100 : 0;
+  const scriplessPercent = scripTotal > 0 ? (totalScripless / scripTotal) * 100 : 0;
 
   return (
     <div className="flex-1 overflow-auto p-6">
@@ -92,10 +158,10 @@ function EntityDetailContent() {
         <div className="flex items-start justify-between">
           <div>
             <h1 className="text-2xl font-bold text-terminal-amber font-mono mb-2">{shareCode}</h1>
-            <p className="text-slate-400">{issuer_name}</p>
+            <p className="text-slate-400">{profile.issuer_name}</p>
           </div>
           <Link
-            href={`/visualize?query=${encodeURIComponent(shareCode)}`}
+            href={`/visualize?id=${encodeURIComponent(shareCode)}&type=entity&direct=true`}
             className="flex items-center gap-2 px-4 py-2 bg-terminal-amber text-slate-950 font-medium hover:bg-terminal-amber/90 transition-colors"
           >
             <Network className="w-4 h-4" />
@@ -105,11 +171,48 @@ function EntityDetailContent() {
         </div>
       </div>
 
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="bg-[#020617] border border-slate-800 p-4">
+          <div className="flex items-center gap-2 text-slate-400 text-sm mb-1">
+            <Percent className="w-4 h-4" />
+            Public Ownership
+          </div>
+          <div className="text-xl font-bold text-slate-200 font-mono">{publicOwnership.toFixed(1)}%</div>
+          <div className="text-xs text-slate-500">float available</div>
+        </div>
+        <div className="bg-[#020617] border border-slate-800 p-4">
+          <div className="flex items-center gap-2 text-slate-400 text-sm mb-1">
+            <Users className="w-4 h-4" />
+            Tracked Holders
+          </div>
+          <div className="text-xl font-bold text-slate-200 font-mono">{profile.total_holders}</div>
+          <div className="text-xs text-slate-500">investors</div>
+        </div>
+        <div className="bg-[#020617] border border-slate-800 p-4">
+          <div className="flex items-center gap-2 text-slate-400 text-sm mb-1">
+            <Globe className="w-4 h-4" />
+            Local
+          </div>
+          <div className="text-xl font-bold text-emerald-400 font-mono">{profile.local_ownership_percent.toFixed(1)}%</div>
+          <div className="text-xs text-slate-500">ownership</div>
+        </div>
+        <div className="bg-[#020617] border border-slate-800 p-4">
+          <div className="flex items-center gap-2 text-slate-400 text-sm mb-1">
+            <Building2 className="w-4 h-4" />
+            Foreign
+          </div>
+          <div className="text-xl font-bold text-blue-400 font-mono">{profile.foreign_ownership_percent.toFixed(1)}%</div>
+          <div className="text-xs text-slate-500">ownership</div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="bg-[#020617] border border-slate-800 p-4">
-          <div className="text-slate-400 text-sm mb-1">Major Holders</div>
-          <div className="text-2xl font-bold text-slate-200 font-mono">{total_holders}</div>
-          <div className="text-xs text-slate-500">investors tracked</div>
+          <div className="text-slate-400 text-sm mb-1">Majority Type</div>
+          <div className="text-2xl font-bold text-slate-200">
+            {profile.majority_type || '-'}
+          </div>
+          <div className="text-xs text-slate-500">most common holder type</div>
         </div>
         <div className="bg-[#020617] border border-slate-800 p-4">
           <div className="text-slate-400 text-sm mb-1">Tracked Ownership</div>
@@ -122,6 +225,38 @@ function EntityDetailContent() {
           <div className="text-xs text-slate-500">by tracked investors</div>
         </div>
       </div>
+
+      {scripTotal > 0 && (
+        <div className="bg-[#020617] border border-slate-800 p-4 mb-6">
+          <div className="text-slate-400 text-sm mb-3">Scrip vs Scripless Distribution</div>
+          <div className="flex items-center gap-4">
+            <div className="flex-1">
+              <div className="flex justify-between text-xs mb-1">
+                <span className="text-slate-300">Scripless</span>
+                <span className="text-slate-400">{scriplessPercent.toFixed(1)}%</span>
+              </div>
+              <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-terminal-amber"
+                  style={{ width: `${scriplessPercent}%` }}
+                />
+              </div>
+            </div>
+            <div className="flex-1">
+              <div className="flex justify-between text-xs mb-1">
+                <span className="text-slate-300">Scrip</span>
+                <span className="text-slate-400">{scripPercent.toFixed(1)}%</span>
+              </div>
+              <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-terminal-link"
+                  style={{ width: `${scripPercent}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="bg-[#020617] border border-slate-800">
         <div className="p-4 border-b border-slate-800">

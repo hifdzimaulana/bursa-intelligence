@@ -34,14 +34,17 @@ interface SearchResultItem {
 function VisualizeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  
+  const directId = searchParams.get('id') || '';
+  const directType = searchParams.get('type') || 'investor';
+  const isDirect = searchParams.get('direct') === 'true';
   const initialQuery = searchParams.get('query') || '';
   
-  const [searchType, setSearchType] = useState<'investor' | 'company'>('investor');
+  const [searchType, setSearchType] = useState<'investor' | 'company'>(directType as 'investor' | 'company');
   const [searchInput, setSearchInput] = useState(initialQuery);
   const [searchResults, setSearchResults] = useState<SearchResultItem[]>([]);
   const [selectedResult, setSelectedResult] = useState<SearchResultItem | null>(null);
   const [showResults, setShowResults] = useState(false);
-  const [degrees, setDegrees] = useState<1 | 2>(2);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
@@ -49,10 +52,21 @@ function VisualizeContent() {
 
   const { data: searchData, isLoading: isSearching } = useSearchEntities(searchInput, searchType);
   
+  const effectiveId = isDirect && directId ? directId : (selectedResult?.name || '');
   const { data: networkData, isLoading: isLoadingNetwork, refetch: refetchNetwork } = useInvestorNetwork(
-    selectedResult?.name || '',
-    degrees
+    effectiveId,
+    3
   );
+
+  useEffect(() => {
+    if (isDirect && directId && !selectedResult) {
+      setSelectedResult({
+        id: `direct-${directId}`,
+        name: directId,
+        type: directType as 'investor' | 'company',
+      });
+    }
+  }, [isDirect, directId, directType, selectedResult]);
 
   useEffect(() => {
     if (searchData && searchInput.length >= 2) {
@@ -60,9 +74,11 @@ function VisualizeContent() {
       setShowResults(true);
     } else {
       setSearchResults([]);
-      setShowResults(false);
+      if (!isDirect) {
+        setShowResults(false);
+      }
     }
-  }, [searchData, searchInput]);
+  }, [searchData, searchInput, isDirect]);
 
   useEffect(() => {
     const updateDimensions = () => {
@@ -87,10 +103,10 @@ function VisualizeContent() {
   const handleVisualize = () => {
     if (selectedResult) {
       if (selectedResult.type === 'investor') {
-        router.push(`/visualize?query=${encodeURIComponent(selectedResult.name)}`, { scroll: false });
+        router.push(`/visualize?id=${encodeURIComponent(selectedResult.name)}&type=investor&direct=true`, { scroll: false });
       } else {
         const shareCode = selectedResult.metadata?.share_code as string || selectedResult.name;
-        router.push(`/visualize/company/${encodeURIComponent(shareCode)}?code=${encodeURIComponent(shareCode)}`, { scroll: false });
+        router.push(`/visualize?id=${encodeURIComponent(shareCode)}&type=entity&direct=true`, { scroll: false });
       }
     }
   };
@@ -102,13 +118,13 @@ function VisualizeContent() {
   };
 
   const graphData = useMemo(() => {
-    if (!networkData) return null;
+    if (!networkData || !networkData.nodes || networkData.nodes.length === 0) return null;
     return {
       nodes: networkData.nodes.map((node) => ({
         ...node,
         color: node.type === 'investor' ? BLOOMBERG_COLORS.amber : BLOOMBERG_COLORS.blue,
       })),
-      links: networkData.links.map((link) => ({
+      links: (networkData.links || []).map((link) => ({
         ...link,
         color: BLOOMBERG_COLORS.slate[600],
       })),
@@ -122,7 +138,7 @@ function VisualizeContent() {
       
       if (globalScale < 0.5) return;
 
-      ctx.font = `${fontSize}px "JetBrains Mono", monospace`;
+      ctx.font = `${Math.max(8, fontSize)}px "JetBrains Mono", monospace`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       
@@ -132,7 +148,26 @@ function VisualizeContent() {
       ctx.fill();
 
       ctx.fillStyle = BLOOMBERG_COLORS.slate[300];
-      ctx.fillText(label, node.x, node.y + (node.val || 5) + fontSize);
+      ctx.fillText(label, node.x, node.y + (node.val || 5) + fontSize + 2);
+    };
+  }, []);
+
+  const linkCanvasObject = useMemo(() => {
+    return (link: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+      if (globalScale < 0.3) return;
+      if (!link.source || !link.target) return;
+      
+      const fontSize = Math.max(6, 10 / globalScale);
+      ctx.font = `${fontSize}px "JetBrains Mono", monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      
+      const percent = (link.percentage || 0).toFixed(1);
+      const midX = (link.source.x + link.target.x) / 2;
+      const midY = (link.source.y + link.target.y) / 2;
+      
+      ctx.fillStyle = BLOOMBERG_COLORS.slate[500];
+      ctx.fillText(`${percent}%`, midX, midY);
     };
   }, []);
 
@@ -145,30 +180,29 @@ function VisualizeContent() {
               <Network className="w-7 h-7 text-terminal-amber" />
               Relationship Map
             </h1>
-            <p className="text-slate-500 text-sm mt-1">Explore ownership networks</p>
+            <p className="text-slate-500 text-sm mt-1">Explore ownership networks (3-degree)</p>
           </div>
           
-          {selectedResult && (
-            <div className="flex items-center gap-2">
-              <select
-                value={degrees}
-                onChange={(e) => setDegrees(Number(e.target.value) as 1 | 2)}
-                className="px-3 py-1.5 bg-[#020617] border border-slate-700 text-slate-300 text-sm"
-              >
-                <option value={1}>1st Degree</option>
-                <option value={2}>1st + 2nd Degree</option>
-              </select>
-              <button
-                onClick={() => refetchNetwork()}
-                className="p-2 text-slate-400 hover:text-slate-200 border border-slate-700"
-              >
-                <RefreshCw className="w-4 h-4" />
-              </button>
-            </div>
+          {selectedResult && !isDirect && (
+            <button
+              onClick={() => refetchNetwork()}
+              className="p-2 text-slate-400 hover:text-slate-200 border border-slate-700"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
+          )}
+          
+          {isDirect && selectedResult && (
+            <button
+              onClick={handleClear}
+              className="px-3 py-1.5 text-sm text-slate-400 hover:text-slate-200 border border-slate-700"
+            >
+              Clear
+            </button>
           )}
         </div>
 
-        {!selectedResult && (
+        {(!selectedResult || !isDirect) && (
           <div className="border border-slate-800 p-6 bg-[#020617]">
             <div className="flex gap-2 mb-4">
               <button
@@ -214,7 +248,7 @@ function VisualizeContent() {
                 )}
               </div>
 
-              {showResults && (
+              {showResults && !isDirect && (
                 <div className="absolute top-full mt-1 left-0 right-0 bg-[#020617] border border-slate-700 z-50 max-h-64 overflow-auto">
                   {isSearching ? (
                     <div className="flex items-center justify-center py-4">
@@ -252,7 +286,7 @@ function VisualizeContent() {
               )}
             </div>
 
-            {selectedResult && (
+            {selectedResult && !isDirect && (
               <button
                 onClick={handleVisualize}
                 className="mt-4 w-full py-3 bg-terminal-amber text-slate-950 font-medium hover:bg-terminal-amber/90 flex items-center justify-center gap-2"
@@ -295,6 +329,7 @@ function VisualizeContent() {
               d3AlphaDecay={0.02}
               d3VelocityDecay={0.3}
               nodeCanvasObject={nodeCanvasObject}
+              linkCanvasObject={linkCanvasObject}
             />
             <div className="absolute bottom-4 left-4 flex gap-2">
               <button

@@ -71,10 +71,19 @@ function TableContent() {
   const renderInvestorCard = (investor: {
     investor_name: string;
     investor_type: string | null;
+    local_foreign: string | null;
     holdings_count: number;
-    top_sector: string | null;
     top_holding: { share_code: string; percentage: number } | null;
-  }) => (
+    nationality: string | null;
+    domicile: string | null;
+  }) => {
+    const displayName = investor.investor_name.length > 31 
+      ? investor.investor_name.slice(0, 31) + '...' 
+      : investor.investor_name;
+    
+    const locationLabel = investor.local_foreign === 'F' ? 'Foreign' : investor.local_foreign === 'L' ? 'Local' : null;
+    
+    return (
     <Link
       key={investor.investor_name}
       href={`/table/investor/${encodeURIComponent(investor.investor_name)}`}
@@ -88,20 +97,25 @@ function TableContent() {
             </div>
             <div>
               <h3 className="text-slate-200 font-medium truncate group-hover:text-terminal-amber transition-colors">
-                {investor.investor_name}
+                {displayName}
               </h3>
-              <InvestorTypeBadge code={investor.investor_type} size="sm" />
+              <div className="flex items-center gap-2">
+                <InvestorTypeBadge code={investor.investor_type} size="sm" />
+                {locationLabel && (
+                  <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                    investor.local_foreign === 'F' 
+                      ? 'bg-blue-500/20 text-blue-400' 
+                      : 'bg-emerald-500/20 text-emerald-400'
+                  }`}>
+                    {locationLabel}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-2 text-xs text-slate-400 mt-2">
-            <div>
-              <span className="text-slate-500">Holdings</span>
-              <p className="text-slate-300 font-mono">{investor.holdings_count}</p>
-            </div>
-            <div>
-              <span className="text-slate-500">Top Sector</span>
-              <p className="text-slate-300 truncate">{investor.top_sector || '-'}</p>
-            </div>
+          <div className="text-xs text-slate-400 mt-2">
+            <span className="text-slate-500">Holdings</span>
+            <p className="text-slate-300 font-mono">{investor.holdings_count}</p>
           </div>
         </div>
         <div className="flex flex-col items-end gap-2">
@@ -115,13 +129,14 @@ function TableContent() {
         </div>
       </div>
     </Link>
-  );
+  )};
 
   const renderEntityCard = (entity: {
     share_code: string;
     issuer_name: string;
     major_holders_count: number;
     concentration_percent: number;
+    public_ownership_percent: number;
   }) => (
     <Link
       key={entity.share_code}
@@ -141,8 +156,8 @@ function TableContent() {
           </div>
         </div>
         <div className="text-right">
-          <span className="text-xs text-slate-500">Concentration</span>
-          <p className="text-slate-300 font-mono text-lg">{(entity.concentration_percent || 0).toFixed(1)}%</p>
+          <span className="text-xs text-slate-500">Public Ownership</span>
+          <p className="text-slate-300 font-mono text-lg">{(entity.public_ownership_percent || 0).toFixed(1)}%</p>
           <span className="text-xs text-slate-500">{entity.major_holders_count} holders</span>
         </div>
       </div>

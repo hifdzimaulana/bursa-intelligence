@@ -101,6 +101,10 @@ export interface InvestorRecord {
   holdings_count: number;
   top_sector: string | null;
   total_shares: number;
+  holdings_scrip: number;
+  holdings_scripless: number;
+  nationality: string | null;
+  domicile: string | null;
   top_holding: { share_code: string; percentage: number } | null;
 }
 
@@ -116,7 +120,12 @@ export async function fetchInvestors({ pageParam = 0, search, investorType, limi
       share_code,
       issuer_name,
       total_holding_shares,
-      percentage
+      percentage,
+      holdings_scrip,
+      holdings_scripless,
+      nationality,
+      domicile,
+      date
     `, { count: 'exact' });
 
   if (search && search.trim()) {
@@ -135,12 +144,15 @@ export async function fetchInvestors({ pageParam = 0, search, investorType, limi
   }
 
   const investorMap = new Map<string, InvestorRecord>();
+  const shareCodeSet = new Set<string>();
   
   data?.forEach((row) => {
     const name = row.investor_name;
     const existing = investorMap.get(name);
     
     if (!existing) {
+      shareCodeSet.clear();
+      shareCodeSet.add(row.share_code);
       investorMap.set(name, {
         id: Math.random(),
         investor_name: name,
@@ -149,13 +161,28 @@ export async function fetchInvestors({ pageParam = 0, search, investorType, limi
         holdings_count: 1,
         top_sector: row.issuer_name || null,
         total_shares: row.total_holding_shares || 0,
+        holdings_scrip: row.holdings_scrip || 0,
+        holdings_scripless: row.holdings_scripless || 0,
+        nationality: row.nationality || null,
+        domicile: row.domicile || null,
         top_holding: row.share_code ? { share_code: row.share_code, percentage: row.percentage || 0 } : null,
       });
     } else {
-      existing.holdings_count += 1;
+      if (!shareCodeSet.has(row.share_code)) {
+        existing.holdings_count += 1;
+        shareCodeSet.add(row.share_code);
+      }
       existing.total_shares += row.total_holding_shares || 0;
+      existing.holdings_scrip += row.holdings_scrip || 0;
+      existing.holdings_scripless += row.holdings_scripless || 0;
       if ((row.percentage || 0) > (existing.top_holding?.percentage || 0)) {
         existing.top_holding = { share_code: row.share_code, percentage: row.percentage || 0 };
+      }
+      if (!existing.nationality && row.nationality) {
+        existing.nationality = row.nationality;
+      }
+      if (!existing.domicile && row.domicile) {
+        existing.domicile = row.domicile;
       }
     }
   });
@@ -198,7 +225,10 @@ export interface EntityRecord {
   issuer_name: string;
   major_holders_count: number;
   concentration_percent: number;
+  public_ownership_percent: number;
   total_major_shares: number;
+  holdings_scrip: number;
+  holdings_scripless: number;
 }
 
 export async function fetchEntities({ pageParam = 0, search, limit = 20 }: FetchEntitiesParams): Promise<EntitiesFetchResult> {
@@ -211,7 +241,9 @@ export async function fetchEntities({ pageParam = 0, search, limit = 20 }: Fetch
       issuer_name,
       investor_name,
       total_holding_shares,
-      percentage
+      percentage,
+      holdings_scrip,
+      holdings_scripless
     `, { count: 'exact' });
 
   if (search && search.trim()) {
@@ -237,12 +269,18 @@ export async function fetchEntities({ pageParam = 0, search, limit = 20 }: Fetch
         issuer_name: row.issuer_name || code,
         major_holders_count: 1,
         concentration_percent: row.percentage || 0,
+        public_ownership_percent: Math.max(0, 100 - (row.percentage || 0)),
         total_major_shares: row.total_holding_shares || 0,
+        holdings_scrip: row.holdings_scrip || 0,
+        holdings_scripless: row.holdings_scripless || 0,
       });
     } else {
       existing.major_holders_count += 1;
       existing.concentration_percent += row.percentage || 0;
+      existing.public_ownership_percent = Math.max(0, 100 - existing.concentration_percent);
       existing.total_major_shares += row.total_holding_shares || 0;
+      existing.holdings_scrip += row.holdings_scrip || 0;
+      existing.holdings_scripless += row.holdings_scripless || 0;
     }
   });
 
