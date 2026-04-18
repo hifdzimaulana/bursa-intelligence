@@ -1,36 +1,71 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Bursa Intelligence
+
+A comprehensive stock market intelligence dashboard for analyzing investor data from the Indonesia Stock Exchange (IDX).
+
+## Features
+
+- **Dashboard Overview** - Key metrics including AUM, data integrity, and investor statistics
+- **Company Analysis** - Detailed shareholder composition and ownership breakdown
+- **Investor Tracking** - Investor profiles with holdings and transaction history
+- **Search** - Quick search across companies and investors
+- **Visualizations** - Interactive charts and network graphs for ownership analysis
+
+## Tech Stack
+
+- **Framework**: Next.js 16
+- **Language**: TypeScript
+- **Database**: Supabase
+- **Charts**: Chart.js, React Force Graph
+- **Styling**: Tailwind CSS
+- **State**: TanStack Query
 
 ## Getting Started
 
-First, run the development server:
-
+1. Install dependencies:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Set up environment variables:
+```bash
+cp .env.example .env.local
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Add your Supabase credentials to `.env.local`:
+```
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+3. Run the development server:
+```bash
+npm run dev
+```
 
-## Learn More
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-To learn more about Next.js, take a look at the following resources:
+## Project Structure
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```
+src/
+├── app/              # Next.js App Router pages
+│   ├── api/          # API routes
+│   ├── company/      # Company analysis pages
+│   ├── investor/    # Investor detail pages
+│   ├── data/        # Data management
+│   ├── visualize/   # Visualization tools
+│   └── page.tsx     # Main dashboard
+├── components/       # React components
+│   ├── charts/      # Chart components
+│   ├── data-table/  # Table components
+│   └── network-graph/ # Graph components
+├── lib/            # Utilities and configs
+│   ├── queries/    # Data fetching queries
+│   ├── supabase/   # Supabase client
+│   └── utils.ts   # Helper functions
+└── workers/       # Web workers
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## License
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+MIT
