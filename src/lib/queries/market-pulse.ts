@@ -393,129 +393,231 @@ export interface NetworkLink {
   percentage: number;
 }
 
-export async function fetchInvestorNetwork(investorName: string, degrees: 1 | 2 | 3 = 3): Promise<{ nodes: NetworkNode[]; links: NetworkLink[] }> {
+export async function fetchInvestorNetwork(
+  name: string, 
+  degrees: 1 | 2 | 3 = 3,
+  type: 'investor' | 'entity' = 'investor'
+): Promise<{ nodes: NetworkNode[]; links: NetworkLink[] }> {
   const supabase = createClient();
   
   const nodes: NetworkNode[] = [];
   const links: NetworkLink[] = [];
   const nodeIds = new Set<string>();
 
-  const investorNode: NetworkNode = {
-    id: `investor-${investorName}`,
-    name: investorName,
-    type: 'investor',
-    val: 30,
-  };
-  nodes.push(investorNode);
-  nodeIds.add(investorNode.id);
+  if (type === 'investor') {
+    // Original logic: Investor -> companies they own
+    const investorNode: NetworkNode = {
+      id: `investor-${name}`,
+      name: name,
+      type: 'investor',
+      val: 30,
+    };
+    nodes.push(investorNode);
+    nodeIds.add(investorNode.id);
 
-  const { data: directHoldings, error: directError } = await supabase
-    .from('shareholders')
-    .select('share_code, issuer_name, percentage, total_holding_shares')
-    .ilike('investor_name', `%${investorName}%`)
-    .order('percentage', { ascending: false })
-    .limit(50);
+    const { data: directHoldings, error: directError } = await supabase
+      .from('shareholders')
+      .select('share_code, issuer_name, percentage, total_holding_shares')
+      .ilike('investor_name', `%${name}%`)
+      .order('percentage', { ascending: false })
+      .limit(50);
 
-  if (directError) throw new Error(directError.message);
+    if (directError) throw new Error(directError.message);
 
-  directHoldings?.forEach((holding) => {
-    const companyId = `company-${holding.share_code}`;
-    if (!nodeIds.has(companyId)) {
-      nodes.push({
-        id: companyId,
-        name: holding.issuer_name || holding.share_code,
-        type: 'company',
-        val: 15,
+    directHoldings?.forEach((holding) => {
+      const companyId = `company-${holding.share_code}`;
+      if (!nodeIds.has(companyId)) {
+        nodes.push({
+          id: companyId,
+          name: holding.issuer_name || holding.share_code,
+          type: 'company',
+          val: 15,
+        });
+        nodeIds.add(companyId);
+      }
+
+      links.push({
+        source: investorNode.id,
+        target: companyId,
+        percentage: holding.percentage || 0,
       });
-      nodeIds.add(companyId);
-    }
-
-    links.push({
-      source: investorNode.id,
-      target: companyId,
-      percentage: holding.percentage || 0,
     });
-  });
 
-  if (degrees >= 2) {
-    const companyCodes = directHoldings?.map((h) => h.share_code) || [];
-    
-    if (companyCodes.length > 0) {
-      const { data: secondDegreeData, error: secondError } = await supabase
-        .from('shareholders')
-        .select('share_code, issuer_name, investor_name, percentage')
-        .in('share_code', companyCodes)
-        .not('investor_name', 'ilike', `%${investorName}%`)
-        .order('percentage', { ascending: false })
-        .limit(100);
-
-      if (secondError) throw new Error(secondError.message);
-
-      const seenSecondDegree = new Set<string>();
+    if (degrees >= 2) {
+      const companyCodes = directHoldings?.map((h) => h.share_code) || [];
       
-      secondDegreeData?.forEach((row) => {
-        const investorId = `investor-${row.investor_name}`;
+      if (companyCodes.length > 0) {
+        const { data: secondDegreeData, error: secondError } = await supabase
+          .from('shareholders')
+          .select('share_code, issuer_name, investor_name, percentage')
+          .in('share_code', companyCodes)
+          .not('investor_name', 'ilike', `%${name}%`)
+          .order('percentage', { ascending: false })
+          .limit(100);
+
+        if (secondError) throw new Error(secondError.message);
+
+        const seenSecondDegree = new Set<string>();
         
-        if (!nodeIds.has(investorId) && !seenSecondDegree.has(investorId) && nodes.length < 150) {
-          nodes.push({
-            id: investorId,
-            name: row.investor_name,
-            type: 'investor',
-            val: 8,
-          });
-          nodeIds.add(investorId);
-          seenSecondDegree.add(investorId);
-        }
+        secondDegreeData?.forEach((row) => {
+          const investorId = `investor-${row.investor_name}`;
+          
+          if (!nodeIds.has(investorId) && !seenSecondDegree.has(investorId) && nodes.length < 150) {
+            nodes.push({
+              id: investorId,
+              name: row.investor_name,
+              type: 'investor',
+              val: 10,
+            });
+            nodeIds.add(investorId);
+            seenSecondDegree.add(investorId);
+          }
 
-        if (nodeIds.has(investorId)) {
-          links.push({
-            source: investorId,
-            target: `company-${row.share_code}`,
-            percentage: row.percentage || 0,
-          });
-        }
-      });
-
-      if (degrees >= 3) {
-        const secondDegreeInvestorNames = Array.from(seenSecondDegree).map(id => id.replace('investor-', ''));
-        
-        if (secondDegreeInvestorNames.length > 0) {
-          const { data: thirdDegreeData, error: thirdError } = await supabase
-            .from('shareholders')
-            .select('share_code, issuer_name, investor_name, percentage')
-            .in('investor_name', secondDegreeInvestorNames)
-            .not('share_code', 'in', companyCodes)
-            .order('percentage', { ascending: false })
-            .limit(100);
-
-          if (!thirdError && thirdDegreeData) {
-            const seenThirdDegree = new Set<string>();
-            
-            thirdDegreeData?.forEach((row) => {
-              const companyId3 = `company-${row.share_code}`;
-              
-              if (!nodeIds.has(companyId3) && nodes.length < 200) {
-                nodes.push({
-                  id: companyId3,
-                  name: row.issuer_name || row.share_code,
-                  type: 'company',
-                  val: 5,
-                });
-                nodeIds.add(companyId3);
-              }
-
-              if (nodeIds.has(companyId3)) {
-                const secondInvestorId = `investor-${row.investor_name}`;
-                if (nodeIds.has(secondInvestorId)) {
-                  links.push({
-                    source: secondInvestorId,
-                    target: companyId3,
-                    percentage: row.percentage || 0,
-                  });
-                }
-              }
+          if (nodeIds.has(investorId)) {
+            links.push({
+              source: investorId,
+              target: `company-${row.share_code}`,
+              percentage: row.percentage || 0,
             });
           }
+        });
+
+        if (degrees >= 3) {
+          const secondDegreeInvestorNames = Array.from(seenSecondDegree).map(id => id.replace('investor-', ''));
+          
+          if (secondDegreeInvestorNames.length > 0) {
+            const { data: thirdDegreeData, error: thirdError } = await supabase
+              .from('shareholders')
+              .select('share_code, issuer_name, investor_name, percentage')
+              .in('investor_name', secondDegreeInvestorNames)
+              .not('share_code', 'in', companyCodes)
+              .order('percentage', { ascending: false })
+              .limit(100);
+
+            if (!thirdError && thirdDegreeData) {
+              thirdDegreeData?.forEach((row) => {
+                const companyId3 = `company-${row.share_code}`;
+                
+                if (!nodeIds.has(companyId3) && nodes.length < 200) {
+                  nodes.push({
+                    id: companyId3,
+                    name: row.issuer_name || row.share_code,
+                    type: 'company',
+                    val: 8,
+                  });
+                  nodeIds.add(companyId3);
+                }
+
+                if (nodeIds.has(companyId3)) {
+                  const secondInvestorId = `investor-${row.investor_name}`;
+                  if (nodeIds.has(secondInvestorId)) {
+                    links.push({
+                      source: secondInvestorId,
+                      target: companyId3,
+                      percentage: row.percentage || 0,
+                    });
+                  }
+                }
+              });
+            }
+          }
+        }
+      }
+    }
+  } else {
+    // Entity mode: 1st = entity itself, 2nd = investors who own it, 3rd = other entities those investors own
+    const entityNode: NetworkNode = {
+      id: `entity-${name}`,
+      name: name,
+      type: 'company',
+      val: 30,
+    };
+    nodes.push(entityNode);
+    nodeIds.add(entityNode.id);
+
+    // Get issuers name for display
+    const { data: entityInfo } = await supabase
+      .from('shareholders')
+      .select('issuer_name')
+      .eq('share_code', name.toUpperCase())
+      .limit(1);
+    
+    if (entityInfo && entityInfo[0]?.issuer_name) {
+      entityNode.name = entityInfo[0].issuer_name;
+    }
+
+    // 2nd degree: Investors who own this company
+    const { data: ownersData, error: ownersError } = await supabase
+      .from('shareholders')
+      .select('investor_name, investor_type, percentage')
+      .eq('share_code', name.toUpperCase())
+      .order('percentage', { ascending: false })
+      .limit(50);
+
+    if (ownersError) throw new Error(ownersError.message);
+
+    const seenOwners = new Set<string>();
+
+    ownersData?.forEach((row) => {
+      const investorId = `investor-${row.investor_name}`;
+      if (!nodeIds.has(investorId) && !seenOwners.has(investorId)) {
+        nodes.push({
+          id: investorId,
+          name: row.investor_name,
+          type: 'investor',
+          val: 15,
+        });
+        nodeIds.add(investorId);
+        seenOwners.add(investorId);
+      }
+
+      if (nodeIds.has(investorId)) {
+        links.push({
+          source: investorId,
+          target: entityNode.id,
+          percentage: row.percentage || 0,
+        });
+      }
+    });
+
+    if (degrees >= 3) {
+      const ownerNames = Array.from(seenOwners).map(id => id.replace('investor-', ''));
+      
+      if (ownerNames.length > 0) {
+        // 3rd degree: Other entities those investors own
+        const { data: thirdDegreeData, error: thirdError } = await supabase
+          .from('shareholders')
+          .select('share_code, issuer_name, investor_name, percentage')
+          .in('investor_name', ownerNames)
+          .not('share_code', 'eq', name.toUpperCase())
+          .order('percentage', { ascending: false })
+          .limit(100);
+
+        if (!thirdError && thirdDegreeData) {
+          thirdDegreeData?.forEach((row) => {
+            const companyId3 = `entity-${row.share_code}`;
+            
+            if (!nodeIds.has(companyId3) && nodes.length < 200) {
+              nodes.push({
+                id: companyId3,
+                name: row.issuer_name || row.share_code,
+                type: 'company',
+                val: 10,
+              });
+              nodeIds.add(companyId3);
+            }
+
+            if (nodeIds.has(companyId3)) {
+              const investorId3 = `investor-${row.investor_name}`;
+              if (nodeIds.has(investorId3)) {
+                links.push({
+                  source: investorId3,
+                  target: companyId3,
+                  percentage: row.percentage || 0,
+                });
+              }
+            }
+          });
         }
       }
     }
@@ -524,10 +626,10 @@ export async function fetchInvestorNetwork(investorName: string, degrees: 1 | 2 
   return { nodes, links };
 }
 
-export function useInvestorNetwork(investorName: string, degrees: 1 | 2 | 3 = 3) {
+export function useInvestorNetwork(investorName: string, degrees: 1 | 2 | 3 = 3, type: 'investor' | 'entity' = 'investor') {
   return useQuery({
-    queryKey: ['network', investorName, degrees],
-    queryFn: () => fetchInvestorNetwork(investorName, degrees),
+    queryKey: ['network', investorName, degrees, type],
+    queryFn: () => fetchInvestorNetwork(investorName, degrees, type),
     enabled: !!investorName,
     staleTime: 10 * 60 * 1000,
   });

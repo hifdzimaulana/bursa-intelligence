@@ -52,10 +52,14 @@ function VisualizeContent() {
 
   const { data: searchData, isLoading: isSearching } = useSearchEntities(searchInput, searchType);
   
+  const effectiveType: 'investor' | 'entity' = isDirect 
+    ? (directType as 'investor' | 'entity')
+    : (selectedResult?.type === 'company' ? 'entity' : 'investor');
   const effectiveId = isDirect && directId ? directId : (selectedResult?.name || '');
   const { data: networkData, isLoading: isLoadingNetwork, refetch: refetchNetwork } = useInvestorNetwork(
     effectiveId,
-    3
+    3,
+    effectiveType
   );
 
   useEffect(() => {
@@ -347,7 +351,7 @@ function VisualizeContent() {
               nodeColor="color"
               nodeVal="val"
               linkColor={() => BLOOMBERG_COLORS.slate[600]}
-              linkWidth={(link: any) => Math.max(1, (link.percentage || 0) / 10)}
+              linkWidth={(link: any) => Math.max(2, Math.min(6, (link.percentage || 0) / 5))}
               linkDirectionalArrowLength={4}
               linkDirectionalArrowRelPos={0.9}
               backgroundColor="#020617"
