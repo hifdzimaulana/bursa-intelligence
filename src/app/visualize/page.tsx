@@ -48,6 +48,7 @@ function VisualizeContent() {
   
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+  const graphRef = useRef<any>(null);
   const [graphZoom, setGraphZoom] = useState(1);
 
   const { data: searchData, isLoading: isSearching } = useSearchEntities(searchInput, searchType);
@@ -312,6 +313,7 @@ function VisualizeContent() {
         ) : graphData && graphData.nodes.length > 0 ? (
           <div className="absolute inset-0">
             <ForceGraph2D
+              ref={graphRef}
               graphData={graphData}
               width={dimensions.width}
               height={dimensions.height}
@@ -324,10 +326,18 @@ function VisualizeContent() {
               linkDirectionalArrowLength={4}
               linkDirectionalArrowRelPos={0.9}
               backgroundColor="#020617"
-              cooldownTicks={100}
-              onEngineStop={() => {}}
-              d3AlphaDecay={0.02}
-              d3VelocityDecay={0.3}
+              cooldownTicks={150}
+              d3AlphaDecay={0.01}
+              d3VelocityDecay={0.1}
+              onEngineStop={() => {
+                // Increase repulsion after initial layout settles
+                if (graphRef.current) {
+                  graphRef.current.d3Force('charge')?.strength(-800);
+                  graphRef.current.d3Force('link')?.distance(200);
+                  graphRef.current.d3Force('collide')?.radius(30);
+                  graphRef.current.reheatSimulation();
+                }
+              }}
               nodeCanvasObject={nodeCanvasObject}
               linkCanvasObject={linkCanvasObject}
             />
